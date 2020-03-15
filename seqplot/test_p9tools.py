@@ -1,15 +1,7 @@
-from pytexshade.shade import *
-from Bio.Seq import Seq
-from Bio.SeqRecord import SeqRecord
 import os
 import sys
-import tempfile
-import math
-from Bio.Align import MultipleSeqAlignment
-from Bio import AlignIO
 from io import StringIO
 import pkg_resources
-import pickle
 from seqplot.p9tools import geom_seq_x
 from plotnine import ggplot,geom_rect, geom_point, aes, stat_smooth,geom_bar, xlim, ylim, facet_wrap, theme_bw,theme_xkcd, geom_line, geom_tile
 from plotnine import scale_y_continuous,scale_x_continuous, theme_bw,theme_classic, theme_dark, theme_light, theme_matplotlib, theme_minimal, theme_seaborn, theme_void
