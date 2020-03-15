@@ -16,7 +16,7 @@ def test_geom_seq_x():
 	img=open(os.path.join(DATA_PATH,'seq.png'), 'rb').read()
 	os.system('mkdir -p test_results')
 	df=pd.DataFrame({'x':np.arange(103),'yy':-np.abs(np.sin(np.arange(103)/10.))})
-	g=(ggplot(data=df,mapping=aes(x='x', y='yy')) + geom_point(size=0.1) + geom_bar(stat='identity') + geom_seq_x(seqimg=s.img,x=df.x,y=df.yy,aspect_ratio=0.1) + theme_light()+pn.theme(aspect_ratio=0.1,dpi=300,plot_margin=0))
+	g=(ggplot(data=df,mapping=aes(x='x', y='yy')) + geom_point(size=0.1) + geom_bar(stat='identity') + geom_seq_x(seqimg=img,x=df.x,y=df.yy,aspect_ratio=0.1) + theme_light()+pn.theme(aspect_ratio=0.1,dpi=300,plot_margin=0))
 	g.save('test_results/plot.png')
 	size=os.path.getsize('test_results/plot.png')
 	assert size>1000, "output png filesize too small, looks that nothing was produced"
