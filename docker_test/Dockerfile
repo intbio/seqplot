@@ -2,7 +2,7 @@
 FROM continuumio/miniconda3
 
 
-RUN conda install -c conda-forge -c intbio -c plotnine pytest
+RUN conda install -c conda-forge  plotnine pytest
 
 
 CMD [ "/bin/bash" ]
