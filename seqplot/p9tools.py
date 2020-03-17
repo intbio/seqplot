@@ -12,6 +12,7 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import to_hex
 
 
+#TODO: implement a geom_seq_x_facet function that will support facet_wrap
 
 @document
 class geom_seq_x(geom_tile):
@@ -35,24 +36,22 @@ class geom_seq_x(geom_tile):
                       'na_rm': False}
 
     
-    def __init__(self, seqimg=None, x=None, y=None, aspect_ratio=0.1, ymin=None, mapping=None, data=None, **kwargs):
+    def __init__(self, seqimg=None, xlim=(0,100), ylim=(0,1), aspect_ratio=0.1, **kwargs):
 
         d=mpimg.imread(io.BytesIO(seqimg))
         pict=pd.DataFrame([(i[1],-i[0],to_hex(d[i])) for i in np.ndindex(d.shape[0],d.shape[1])],columns=['x','y','c'])
         imgdx=float(d.shape[1])
         imgdy=float(d.shape[0])
-        if ymin is None:
-            ymin=y.min()
-        dy=(y.max()-ymin)
+        dy=(ylim[1]-ylim[0])
 #         dy=103.
-        dx=(x.max()-x.min())+1.0
+        dx=(xlim[1]-xlim[0])+1.0
         f=imgdy/imgdx
         a=aspect_ratio
         dh=dy*f/np.abs(a-f)
         pixel_width=dx/imgdx
 #         pict.x=pict.x/(imgdx-1)*(dx-pixel_width)-0.5+x.min()+pixel_width/2
-        pict.x=pict.x/(imgdx-1)*(dx)-0.5+x.min()
-        pict.y=pict.y/imgdy*dh+ymin
+        pict.x=pict.x/(imgdx-1.0)*(dx)-0.5+xlim[0]
+        pict.y=pict.y/imgdy*dh+ylim[0]
 #         pict['segid']='A'
 #         pict.x=pict.x/1416.*103.-0.5
 #         pict.y=pict.y/64.*1.
