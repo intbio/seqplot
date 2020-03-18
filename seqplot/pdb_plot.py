@@ -14,7 +14,7 @@ from plotnine.doctools import document
 from plotnine.geoms.geom_tile import geom_tile
 from plotnine import aes, theme
 
-from pytexshade import ipyshade
+from pytexshade import ipyshade,shade
 from plotnine import ggplot,geom_rect, geom_point, aes, stat_smooth,geom_bar, xlim, ylim, facet_wrap, theme_bw,theme_xkcd, geom_line, geom_tile
 from plotnine import facet_wrap, theme, scale_y_continuous,scale_x_continuous, theme_bw,theme_classic, theme_dark, theme_light, theme_matplotlib, theme_minimal, theme_seaborn, theme_void
 from .p9tools import geom_seq_x
@@ -23,11 +23,13 @@ import pandas as pd
 import numpy as np
 from Bio import pairwise2
 from Bio import SeqIO
+from Bio import Entrez
+from Bio.Align import MultipleSeqAlignment
 
 import requests
 import io
 
-def plot_prof4pdb(pdbchid='1KX5_A',column='value',data=None,ymin=0,draft=False):
+def plot_prof4pdb(pdb_chain_id='1KX5_A',column='value',data=None,ymin=0,draft=False,entrez_email='info@example.com',feature_types=['all'],shading_modes=['charge_functional'],right_overhang_fix=None,debug=False,startnumber=1,cropseq=(None,None)):
     """
     Plot profiles on PDB sequences with annotations
    a dataframe of data in the form segid,resid, value
@@ -53,9 +55,10 @@ def plot_prof4pdb(pdbchid='1KX5_A',column='value',data=None,ymin=0,draft=False):
     # How to get pdb-seq, looks like Biopython PdbIO is also good,\
     # because we get sequence with Xs at gaps and also the start and end resid numbers.
     # minus is that it does not work with DNA or RNA, but we can make a pull request to biopython with a feature in the future
-    
-    pdbid=pdbchid.split('_')[0]
-    chid=pdbchid.split('_')[1]
+    if (startnumber!=1):
+        print('Warning: stratnumber parameber is known to be buggy, e.g. 0 and -1 values do not work as expected. Check!')
+    pdbid=pdb_chain_id.split('_')[0]
+    chid=pdb_chain_id.split('_')[1]
     seqrec={}
     pdbseq={}
     h=io.StringIO(requests.get('https://files.rcsb.org/download/%s.pdb'%pdbid).content.decode("utf-8") )
@@ -66,10 +69,11 @@ def plot_prof4pdb(pdbchid='1KX5_A',column='value',data=None,ymin=0,draft=False):
     for record in SeqIO.parse(h,'pdb-atom'):
         pdbseq[record.id.split(':')[1]]=record
     resid_start=pdbseq[chid].annotations['start']
-    alignment = pairwise2.align.globalxs(seqrec[chid].seq, pdbseq[chid].seq,-10,-1,penalize_end_gaps=False)[0]
+    alignment = pairwise2.align.globalxs(seqrec[chid].seq[cropseq[0]:cropseq[1]], pdbseq[chid].seq,-10,-1,penalize_end_gaps=False)[0]
 #     print(alignment)
         
     #TODO: It's good to add some asserts here to check if the sequence in data corresponds to what we have in seqrec (?)
+    
     overhang=len(alignment[1].split(pdbseq[chid].seq[0])[0])
     
     
@@ -78,21 +82,46 @@ def plot_prof4pdb(pdbchid='1KX5_A',column='value',data=None,ymin=0,draft=False):
 #     print(datafixed)
     #proceed with plotting
     
-    shaded=ipyshade.shadepdbquick(pdb_chain_id=pdbchid,entrez_email='info@example.com',debug=False,\
-                         force_feature_pos='bottom',ruler='bottom',legend=False,\
-                         feature_types=['SecStr'],show_seq_names=False,show_seq_length=False,density=dpi,startnumber=1)
-    sl=len(shaded.seqrec.seq)
+    #Let's get annotation from genbank indluding secondary structure
     
+    
+    Entrez.email = entrez_email  # Always tell NCBI who you are
+    handle = Entrez.efetch(db="protein", id=pdb_chain_id, rettype="gb", retmode="text")
+    record = SeqIO.read(handle, "genbank")
+    msar=MultipleSeqAlignment([record])
+    msar[0].id='PDB_'+pdb_chain_id
+
+    msar=msar[:,cropseq[0]:cropseq[1]]
+    
+    sl=len(msar[0].seq)
+
+    fn=shade.seqfeat2shadefeat(msar,feature_types=feature_types,force_feature_pos='bottom',debug=debug)
+    shaded=ipyshade.shadedmsa4plot(msar,features=fn,shading_modes=shading_modes,debug=debug,startnumber=startnumber,setends=[startnumber-2,sl+startnumber+2])
+    
+#     shaded=ipyshade.shadepdbquick(pdb_chain_id=pdb_chain_id,entrez_email='info@example.com',debug=False,\
+#                          force_feature_pos='bottom',ruler='bottom',legend=False,\
+#                          feature_types=['SecStr'],show_seq_names=False,show_seq_length=False,density=dpi,startnumber=1)
+    
+    #If sl%10=10 se will have a ruler number hanging beyond the sequence image, and we need to correct for that.
+    if right_overhang_fix is None:
+        if sl%10==0:
+            if sl<100:
+                rof= 0.1
+            else:
+                rof=0.5
+        else:
+            rof=0
+    else:
+        rof=right_overhang_fix
+        
     plot=(ggplot(data=datafixed,mapping=aes(x='resid', y=column))
         + geom_point(size=0.1)+geom_bar(stat='identity',width=0.5)
-        + scale_x_continuous(limits=(0.5,sl+0.5),expand=(0,0),name='',breaks=[])
+        + scale_x_continuous(limits=(0.5,sl+0.5+rof),expand=(0,0.2),name='',breaks=[])
        # + scale_y_continuous(breaks=[0,0.5,1.0])
         + theme_light()+theme(aspect_ratio=0.15,dpi=dpi,plot_margin=0)) #+ facet_wrap('~ segid',dir='v')
 
-    
-    
-    
-    plot = plot + geom_seq_x(seqimg=shaded.img,xlim=(1,sl),\
+       
+    plot = plot + geom_seq_x(seqimg=shaded.img,xlim=(1,sl+rof),\
                              ylim=(ymin,data[column].max()),aspect_ratio=0.15)
     
     

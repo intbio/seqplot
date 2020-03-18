@@ -50,7 +50,7 @@ class geom_seq_x(geom_tile):
         dh=dy*f/np.abs(a-f)
         pixel_width=dx/imgdx
 #         pict.x=pict.x/(imgdx-1)*(dx-pixel_width)-0.5+x.min()+pixel_width/2
-        pict.x=pict.x/(imgdx-1.0)*(dx)-0.5+xlim[0]
+        pict.x=pict.x/(imgdx)*(dx)-0.5+xlim[0]+pixel_width/2
         pict.y=pict.y/imgdy*dh+ylim[0]
 #         pict['segid']='A'
 #         pict.x=pict.x/1416.*103.-0.5
