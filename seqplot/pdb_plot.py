@@ -6,7 +6,6 @@ The first goal is:
 given a pdb id (e.g. 1KX5) and a dataframe of data in the form
 segid,resid, value
 produce plots of params ontop of the sequences.
-
 """
 
 from plotnine.utils import resolution
@@ -29,10 +28,11 @@ from Bio.Align import MultipleSeqAlignment
 import requests
 import io
 
-def plot_prof4pdb(pdb_chain_id='1KX5_A',column='value',data=None,ymin=0,draft=False,entrez_email='info@example.com',feature_types=['all'],shading_modes=['charge_functional'],right_overhang_fix=None,debug=False,startnumber=1,cropseq=(None,None)):
+def plot_prof4pdb(pdb_chain_id='1KX5_A',column='value',data=None,ymin=0,draft=False,entrez_email='info@example.com',feature_types=['all'],add_features=[],funcgroups=None,shading_modes=['charge_functional'],right_overhang_fix=None,debug=False,startnumber=1,cropseq=(None,None),aspect_ratio=None,protein=False,reverse_seq=False):
+        
     """
     Plot profiles on PDB sequences with annotations
-   a dataframe of data in the form segid,resid, value
+    a dataframe of data in the form segid,resid, value
     """
     if draft:
         dpi=100
@@ -55,26 +55,81 @@ def plot_prof4pdb(pdb_chain_id='1KX5_A',column='value',data=None,ymin=0,draft=Fa
     # How to get pdb-seq, looks like Biopython PdbIO is also good,\
     # because we get sequence with Xs at gaps and also the start and end resid numbers.
     # minus is that it does not work with DNA or RNA, but we can make a pull request to biopython with a feature in the future
-    if (startnumber!=1):
-        print('Warning: stratnumber parameber is known to be buggy, e.g. 0 and -1 values do not work as expected. Check!')
+    
+#     if (startnumber!=1):
+#         print('Warning: stratnumber parameber is known to be buggy, e.g. 0 and -1 values do not work as expected. Check!')
+
+    #This is a super dooper ad hoc function trying to go around different bugs and limited finctionality in working with pdb files.
+    
+    #We get info about chain seq from pdb, cif and NCBI and then try to combine it.
+    
     pdbid=pdb_chain_id.split('_')[0]
     chid=pdb_chain_id.split('_')[1]
-    seqrec={}
-    pdbseq={}
-    h=io.StringIO(requests.get('https://files.rcsb.org/download/%s.pdb'%pdbid).content.decode("utf-8") )
-    for record in SeqIO.parse(h,'pdb-seqres'):
-        seqrec[record.id.split(':')[1]]=record
+#     seqrec={}#stores seqrec from pdb files.
+    pdbseq={}#stores sequences from ATOM records in pdb files, these are good, but fail to get non-protein (e.g. DNA chains)
+    cifseq={}#strores sequnces from cif files - these do not get DNA seq either, but at leaste report the starting resid for these chains
+    ncbi_record=False #get seqrec through ncbi - this is identical to SEQREC record in PDB + annotation.
+    
+#     h=io.StringIO(requests.get('https://files.rcsb.org/download/%s.pdb'%pdbid).content.decode("utf-8") )
+#     for record in SeqIO.parse(h,'pdb-seqres'):
+#         seqrec[record.id.split(':')[1]]=record
 
     h=io.StringIO(requests.get('https://files.rcsb.org/download/%s.pdb'%pdbid).content.decode("utf-8") )
     for record in SeqIO.parse(h,'pdb-atom'):
         pdbseq[record.id.split(':')[1]]=record
-    resid_start=pdbseq[chid].annotations['start']
-    alignment = pairwise2.align.globalxs(seqrec[chid].seq[cropseq[0]:cropseq[1]], pdbseq[chid].seq,-10,-1,penalize_end_gaps=False)[0]
-#     print(alignment)
-        
-    #TODO: It's good to add some asserts here to check if the sequence in data corresponds to what we have in seqrec (?)
     
-    overhang=len(alignment[1].split(pdbseq[chid].seq[0])[0])
+    if(not protein):
+        h=io.StringIO(requests.get('https://files.rcsb.org/view/%s.cif'%pdbid).content.decode("utf-8") )
+        for record in SeqIO.parse(h,'cif-atom'):
+            cifseq[record.id.split(':')[1]]=record
+    
+    Entrez.email = entrez_email  # Always tell NCBI who you are
+    
+    try:
+        handle = Entrez.efetch(db="protein", id=pdb_chain_id, rettype="gb", retmode="text")
+    except:
+        pass
+    
+    try:
+        handle = Entrez.efetch(db="nuccore", id=pdb_chain_id, rettype="gb", retmode="text")
+    except:
+        pass
+
+    ncbi_record = SeqIO.read(handle, "genbank")
+    msar=MultipleSeqAlignment([ncbi_record])
+    msar[0].id='PDB_'+pdb_chain_id
+    
+    if(reverse_seq):
+        print("Experimental feature will reverse the sequence")
+        msar[0].seq=msar[0].seq[::-1]
+        
+    msar=msar[:,cropseq[0]:cropseq[1]]
+
+    
+#     print("Seq to plot:",msar)
+             
+    #We need to get starting residue, currently for DNA chains only cifseq gets it correctly
+    if(protein):
+        resid_start=pdbseq[chid].annotations['start']
+    else:
+        resid_start=cifseq[chid].annotations['start']
+    
+    print("Starting resid",resid_start)
+    
+    #We need to align seqrec to pdbseq and see what's the difference
+    #currently pdbseq is only good for it.
+    #However, we do not have it for nucleic either, so we have to take the seqrec instead, sacrificing cases where they are different
+    seq2aln=ncbi_record.seq
+    try:
+        seq2aln=pdbseq[chid].seq
+    except:
+        pass
+    alignment = pairwise2.align.globalxs(ncbi_record.seq[cropseq[0]:cropseq[1]], seq2aln,-10,-1,penalize_end_gaps=False)[0]
+
+    overhang=len(alignment[1].split(seq2aln[0])[0])
+#     print("Overgang value:",overhang)
+
+    #TODO: It's good to add some asserts here to check if the sequence in data corresponds to what we have in seqrec (?)
     
     
     datafixed=data
@@ -83,20 +138,13 @@ def plot_prof4pdb(pdb_chain_id='1KX5_A',column='value',data=None,ymin=0,draft=Fa
     #proceed with plotting
     
     #Let's get annotation from genbank indluding secondary structure
-    
-    
-    Entrez.email = entrez_email  # Always tell NCBI who you are
-    handle = Entrez.efetch(db="protein", id=pdb_chain_id, rettype="gb", retmode="text")
-    record = SeqIO.read(handle, "genbank")
-    msar=MultipleSeqAlignment([record])
-    msar[0].id='PDB_'+pdb_chain_id
 
-    msar=msar[:,cropseq[0]:cropseq[1]]
     
     sl=len(msar[0].seq)
 
     fn=shade.seqfeat2shadefeat(msar,feature_types=feature_types,force_feature_pos='bottom',debug=debug)
-    shaded=ipyshade.shadedmsa4plot(msar,features=fn,shading_modes=shading_modes,debug=debug,startnumber=startnumber,setends=[startnumber-2,sl+startnumber+2])
+    fn.extend(add_features)
+    shaded=ipyshade.shadedmsa4plot(msar,features=fn,shading_modes=shading_modes,debug=debug,startnumber=startnumber,setends=[startnumber-2,sl+startnumber+2],funcgroups=funcgroups)
     
 #     shaded=ipyshade.shadepdbquick(pdb_chain_id=pdb_chain_id,entrez_email='info@example.com',debug=False,\
 #                          force_feature_pos='bottom',ruler='bottom',legend=False,\
@@ -113,16 +161,19 @@ def plot_prof4pdb(pdb_chain_id='1KX5_A',column='value',data=None,ymin=0,draft=Fa
             rof=0
     else:
         rof=right_overhang_fix
-        
+    if (not aspect_ratio is None ):
+        ar=aspect_ratio
+    else:
+        ar=0.15*100./sl
     plot=(ggplot(data=datafixed,mapping=aes(x='resid', y=column))
         + geom_point(size=0.1)+geom_bar(stat='identity',width=0.5)
         + scale_x_continuous(limits=(0.5,sl+0.5+rof),expand=(0,0.2),name='',breaks=[])
        # + scale_y_continuous(breaks=[0,0.5,1.0])
-        + theme_light()+theme(aspect_ratio=0.15,dpi=dpi,plot_margin=0)) #+ facet_wrap('~ segid',dir='v')
+        + theme_light()+theme(aspect_ratio=ar,dpi=dpi,plot_margin=0)) #+ facet_wrap('~ segid',dir='v')
 
        
     plot = plot + geom_seq_x(seqimg=shaded.img,xlim=(1,sl+rof),\
-                             ylim=(ymin,data[column].max()),aspect_ratio=0.15)
+                             ylim=(ymin,data[column].max()),aspect_ratio=ar)
     
     
     return plot
